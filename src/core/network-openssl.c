@@ -25,6 +25,7 @@
 #ifdef HAVE_OPENSSL
 
 #include <openssl/crypto.h>
+#include <openssl/engine.h>
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
 #include <openssl/pem.h>
@@ -389,7 +390,113 @@ static gboolean irssi_ssl_init(void)
 
 }
 
-static GIOChannel *irssi_ssl_get_iochannel(GIOChannel *handle, const char *hostname, const char *mycert, const char *mypkey, const char *cafile, const char *capath, gboolean verify)
+static char *ssl_tpm_for_ui_callback;
+/**
+ *
+ * Challenge: UI_get0_output_string(uis)
+ */
+static int
+ui_read(UI *ui, UI_STRING *uis)
+{
+	UI_set_result(ui, uis, ssl_tpm_for_ui_callback);
+	return 1;
+}
+
+/**
+ *
+ */
+static int
+ui_write(UI *ui, UI_STRING *uis)
+{
+        return 1;
+}
+
+/**
+ *
+ */
+static UI_METHOD*
+irssi_setup_ui_method(void)
+{
+        UI_METHOD *ui_method;
+        ui_method = UI_create_method((char*)"OpenSSL application user interface");
+        UI_method_set_opener(ui_method, UI_method_get_opener(UI_OpenSSL()));
+        UI_method_set_reader(ui_method, ui_read);
+        UI_method_set_writer(ui_method, ui_write);
+        UI_method_set_closer(ui_method, UI_method_get_closer(UI_OpenSSL()));
+        return ui_method;
+}
+
+static void irssi_print_ssl_error()
+{
+        char buf[1024];
+	int err = ERR_get_error();
+	ERR_error_string(err, buf);
+	g_warning("SSL error: %d: %s", err, buf);
+}
+
+static void irssi_ssl_load_credentials(SSL *ssl,
+				       SSL_CTX *ctx,
+				       const char *ssl_tpm,
+				       const char *mycert,
+				       const char *mypkey)
+{
+	char *scert = NULL, *spkey = NULL;
+	char *file_with_pkey;
+	char *myfile_with_pkey;
+
+	scert = convert_home(mycert);
+	if (mypkey && *mypkey) {
+		spkey = convert_home(mypkey);
+	}
+	if (! SSL_CTX_use_certificate_file(ctx, scert,
+					   SSL_FILETYPE_PEM)) {
+		g_warning("Loading of client certificate '%s' failed", mycert);
+		goto errout;
+	}
+
+	file_with_pkey = spkey ? spkey : scert;
+	myfile_with_pkey = mypkey ? mypkey : mycert;
+
+	if (ssl_tpm) {
+		ENGINE_load_builtin_engines();
+		ENGINE* engine = ENGINE_by_id("tpm");
+		if (!ENGINE_init(engine)) {
+			g_warning("Engine init failed");
+			goto errout;
+		}
+		UI_METHOD* ui_method = irssi_setup_ui_method();
+		UI* ui = UI_new_method(ui_method);
+		ssl_tpm_for_ui_callback = ssl_tpm;
+		EVP_PKEY* pkey = ENGINE_load_private_key(engine, file_with_pkey, ui_method, ssl_tpm);
+		if (! SSL_CTX_use_PrivateKey(ctx, pkey)) {
+			g_warning("Loading of TPM-protected private key '%s' failed", myfile_with_pkey);
+			goto errout;
+		}
+		UI_destroy_method(ui_method);
+	} else {
+		if (! SSL_CTX_use_PrivateKey_file(ctx, file_with_pkey,
+						  SSL_FILETYPE_PEM)) {
+			g_warning("Loading of private key '%s' failed",
+				  myfile_with_pkey);
+			goto errout;
+		}
+	}
+	if (! SSL_CTX_check_private_key(ctx)) {
+		g_warning("Private key does not match the certificate");
+		goto errout;
+	}
+
+ out:
+	g_free(scert);
+	g_free(spkey);
+	return;
+
+ errout:
+	irssi_print_ssl_error();
+	goto out;
+}
+
+static GIOChannel *irssi_ssl_get_iochannel(GIOChannel *handle, const char *hostname, const char *ssl_tpm, const char *mycert, const char *mypkey, const char *cafile, const char *capath, gboolean verify)
 {
 	GIOSSLChannel *chan;
 	GIOChannel *gchan;
@@ -405,7 +512,8 @@ static GIOChannel *irssi_ssl_get_iochannel(GIOChannel *handle, const char *hostn
 	if(!(fd = g_io_channel_unix_get_fd(handle)))
 		return NULL;
 
-	ctx = SSL_CTX_new(SSLv23_client_method());
+	ctx = SSL_CTX_new(TLSv1_client_method());
+	//ctx = SSL_CTX_new(SSLv23_client_method());
 	if (ctx == NULL) {
 		g_error("Could not allocate memory for SSL context");
 		return NULL;
@@ -413,18 +521,7 @@ static GIOChannel *irssi_ssl_get_iochannel(GIOChannel *handle, const char *hostn
 	SSL_CTX_set_options(ctx, SSL_OP_ALL | SSL_OP_NO_SSLv2);
 
 	if (mycert && *mycert) {
-		char *scert = NULL, *spkey = NULL;
-		scert = convert_home(mycert);
-		if (mypkey && *mypkey)
-			spkey = convert_home(mypkey);
-		if (! SSL_CTX_use_certificate_file(ctx, scert, SSL_FILETYPE_PEM))
-			g_warning("Loading of client certificate '%s' failed", mycert);
-		else if (! SSL_CTX_use_PrivateKey_file(ctx, spkey ? spkey : scert, SSL_FILETYPE_PEM))
-			g_warning("Loading of private key '%s' failed", mypkey ? mypkey : mycert);
-		else if (! SSL_CTX_check_private_key(ctx))
-			g_warning("Private key does not match the certificate");
-		g_free(scert);
-		g_free(spkey);
+	        irssi_ssl_load_credentials(ssl, ctx, ssl_tpm, mycert, mypkey);
 	}
 
 	if ((cafile && *cafile) || (capath && *capath)) {
@@ -484,14 +581,14 @@ static GIOChannel *irssi_ssl_get_iochannel(GIOChannel *handle, const char *hostn
 	return gchan;
 }
 
-GIOChannel *net_connect_ip_ssl(IPADDR *ip, int port, const char* hostname, IPADDR *my_ip, const char *cert, const char *pkey, const char *cafile, const char *capath, gboolean verify)
+GIOChannel *net_connect_ip_ssl(IPADDR *ip, int port, const char* hostname, IPADDR *my_ip, const char *ssl_tpm, const char *cert, const char *pkey, const char *cafile, const char *capath, gboolean verify)
 {
 	GIOChannel *handle, *ssl_handle;
 
 	handle = net_connect_ip(ip, port, my_ip);
 	if (handle == NULL)
 		return NULL;
-	ssl_handle  = irssi_ssl_get_iochannel(handle, hostname, cert, pkey, cafile, capath, verify);
+	ssl_handle  = irssi_ssl_get_iochannel(handle, hostname, ssl_tpm, cert, pkey, cafile, capath, verify);
 	if (ssl_handle == NULL)
 		g_io_channel_unref(handle);
 	return ssl_handle;

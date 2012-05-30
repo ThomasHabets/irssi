@@ -50,7 +50,8 @@ const char *get_visible_target(IRC_SERVER_REC *server, const char *target)
 
 	return target;
 }
-/* SYNTAX: SERVER ADD [-4 | -6] [-ssl] [-ssl_cert <cert>] [-ssl_pkey <pkey>]
+/* SYNTAX: SERVER ADD [-4 | -6] [-ssl] [-ssl_tpm <SRK password>]
+                      [-ssl_cert <cert>] [-ssl_pkey <pkey>]
                       [-ssl_verify] [-ssl_cafile <cafile>] [-ssl_capath <capath>]
                       [-auto | -noauto] [-network <network>] [-host <hostname>]
                       [-cmdspeed <ms>] [-cmdmax <count>] [-port <port>]
@@ -108,6 +109,10 @@ static void cmd_server_list(const char *data)
 			g_string_append(str, "noproxy, ");
 		if (rec->use_ssl) {
 			g_string_append(str, "ssl, ");
+			if (rec->ssl_tpm) {
+				g_string_append_printf(str, "ssl_tpm: %s, ",
+						       rec->ssl_tpm);
+			}
 			if (rec->ssl_cert) {
 				g_string_append_printf(str, "ssl_cert: %s, ", rec->ssl_cert);
 				if (rec->ssl_pkey)

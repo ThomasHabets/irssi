@@ -192,6 +192,7 @@ server_connect_copy_skeleton(SERVER_CONNECT_REC *src, int connect_info)
 	dest->no_autosendcmd = src->no_autosendcmd;
 
 	dest->use_ssl = src->use_ssl;
+	dest->ssl_tpm = g_strdup(src->ssl_tpm);
 	dest->ssl_cert = g_strdup(src->ssl_cert);
 	dest->ssl_pkey = g_strdup(src->ssl_pkey);
 	dest->ssl_verify = src->ssl_verify;

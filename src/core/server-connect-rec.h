@@ -23,6 +23,7 @@ char *nick;
 char *username;
 char *realname;
 
+char *ssl_tpm;
 char *ssl_cert;
 char *ssl_pkey;
 char *ssl_cafile;

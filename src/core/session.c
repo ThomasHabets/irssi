@@ -160,6 +160,7 @@ static void session_save_server(SERVER_REC *server, CONFIG_REC *config,
 	config_node_set_str(config, node, "version", server->version);
 
 	config_node_set_bool(config, node, "use_ssl", server->connrec->use_ssl);
+	config_node_set_str(config, node, "ssl_tpm", server->connrec->ssl_tpm);
 	config_node_set_str(config, node, "ssl_cert", server->connrec->ssl_cert);
 	config_node_set_str(config, node, "ssl_pkey", server->connrec->ssl_pkey);
 	config_node_set_bool(config, node, "ssl_verify", server->connrec->ssl_verify);

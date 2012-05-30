@@ -165,6 +165,8 @@ static void server_setup_fill_server(SERVER_CONNECT_REC *conn,
 		conn->port = sserver->port;
 
 	conn->use_ssl = sserver->use_ssl;
+	if (conn->ssl_tpm == NULL && sserver->ssl_tpm != NULL)
+		conn->ssl_tpm = g_strdup(sserver->ssl_tpm);
 	if (conn->ssl_cert == NULL && sserver->ssl_cert != NULL && sserver->ssl_cert[0] != '\0')
 		conn->ssl_cert = g_strdup(sserver->ssl_cert);
 	if (conn->ssl_pkey == NULL && sserver->ssl_pkey != NULL && sserver->ssl_pkey[0] != '\0')
@@ -394,6 +396,7 @@ static SERVER_SETUP_REC *server_setup_read(CONFIG_NODE *node)
 	rec->address = g_strdup(server);
 	rec->password = g_strdup(config_node_get_str(node, "password", NULL));
 	rec->use_ssl = config_node_get_bool(node, "use_ssl", FALSE);
+	rec->ssl_tpm = g_strdup(config_node_get_str(node, "ssl_tpm", NULL));
 	rec->ssl_cert = g_strdup(config_node_get_str(node, "ssl_cert", NULL));
 	rec->ssl_pkey = g_strdup(config_node_get_str(node, "ssl_pkey", NULL));
 	rec->ssl_verify = config_node_get_bool(node, "ssl_verify", FALSE);
@@ -433,6 +436,7 @@ static void server_setup_save(SERVER_SETUP_REC *rec)
 	iconfig_node_set_int(node, "port", rec->port);
 	iconfig_node_set_str(node, "password", rec->password);
 	iconfig_node_set_bool(node, "use_ssl", rec->use_ssl);
+	iconfig_node_set_str(node, "ssl_tpm", rec->ssl_tpm);
 	iconfig_node_set_str(node, "ssl_cert", rec->ssl_cert);
 	iconfig_node_set_str(node, "ssl_pkey", rec->ssl_pkey);
 	iconfig_node_set_bool(node, "ssl_verify", rec->ssl_verify);
@@ -474,6 +478,7 @@ static void server_setup_destroy(SERVER_SETUP_REC *rec)
 	g_free_not_null(rec->own_ip6);
 	g_free_not_null(rec->chatnet);
 	g_free_not_null(rec->password);
+	g_free_not_null(rec->ssl_tpm);
 	g_free_not_null(rec->ssl_cert);
 	g_free_not_null(rec->ssl_pkey);
 	g_free_not_null(rec->ssl_cafile);

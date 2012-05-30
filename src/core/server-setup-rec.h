@@ -8,6 +8,7 @@ char *address;
 int port;
 char *password;
 
+char *ssl_tpm;
 char *ssl_cert;
 char *ssl_pkey;
 char *ssl_cafile;
